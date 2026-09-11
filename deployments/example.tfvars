@@ -14,7 +14,9 @@ databricks_account_id = "00000000-0000-0000-0000-000000000000"
 
 existing_metastore_id = ""
 
+# NOTE: the db_fe management group enforces an "owner" tag (lowercase) on all
+# resources via Azure Policy — keep it set or apply will be denied.
 tags = {
-  Owner       = "me@example.com"
+  owner       = "me@example.com"
   Environment = "demo"
 }

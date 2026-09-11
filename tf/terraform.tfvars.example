@@ -11,6 +11,7 @@ databricks_account_id = "00000000-0000-0000-0000-000000000000"
 # Attach an existing UC metastore (recommended). Leave "" to skip.
 existing_metastore_id = ""
 
+# "owner" (lowercase) is required by Azure Policy on the db_fe management group.
 tags = {
-  Owner = "me@example.com"
+  owner = "me@example.com"
 }

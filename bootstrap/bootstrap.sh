@@ -31,6 +31,10 @@ STATE_CONTAINER="${STATE_CONTAINER:-tfstate}"
 IDENTITY_NAME="${IDENTITY_NAME:-tf-web-based-deployment-ci}"
 read -r -a ENVS <<<"${ENVIRONMENTS:-azure-prod azure-prod-destroy}"
 
+# Some subscriptions enforce an "owner" tag on all resources via Azure Policy.
+# Default it to the signed-in identity's name; override with OWNER_TAG if needed.
+OWNER_TAG="${OWNER_TAG:-$(az account show --query user.name -o tsv)}"
+
 ISSUER="https://token.actions.githubusercontent.com"
 AUDIENCE="api://AzureADTokenExchange"
 
@@ -39,14 +43,15 @@ TENANT_ID="$(az account show --query tenantId -o tsv)"
 echo "Bootstrapping in subscription ${SUBSCRIPTION_ID} (tenant ${TENANT_ID})"
 
 # 1. State resource group -----------------------------------------------------
-az group create -n "$STATE_RG" -l "$LOCATION" -o none
+az group create -n "$STATE_RG" -l "$LOCATION" --tags "owner=$OWNER_TAG" -o none
 echo "✓ resource group: $STATE_RG"
 
 # 2. State storage account (create only if missing) ---------------------------
 if ! az storage account show -n "$STATE_STORAGE_ACCOUNT" -g "$STATE_RG" -o none 2>/dev/null; then
   az storage account create -n "$STATE_STORAGE_ACCOUNT" -g "$STATE_RG" -l "$LOCATION" \
     --sku Standard_LRS --kind StorageV2 \
-    --min-tls-version TLS1_2 --allow-blob-public-access false -o none
+    --min-tls-version TLS1_2 --allow-blob-public-access false \
+    --tags "owner=$OWNER_TAG" -o none
 fi
 az storage account blob-service-properties update \
   --account-name "$STATE_STORAGE_ACCOUNT" --enable-versioning true -o none
