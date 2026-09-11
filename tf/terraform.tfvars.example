@@ -1,0 +1,16 @@
+# Copy to deployments/<deployment-name>.tfvars and fill in.
+# The workflow reads deployments/<deployment-name>.tfvars for the run.
+
+workspace_name      = "my-databricks-ws"
+resource_group_name = "my-databricks-rg"
+location            = "westeurope"
+
+tenant_id             = "00000000-0000-0000-0000-000000000000"
+databricks_account_id = "00000000-0000-0000-0000-000000000000"
+
+# Attach an existing UC metastore (recommended). Leave "" to skip.
+existing_metastore_id = ""
+
+tags = {
+  Owner = "me@example.com"
+}

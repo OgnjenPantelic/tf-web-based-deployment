@@ -1,0 +1,77 @@
+name: Deploy Databricks Workspace
+
+# Triggered from the GitHub UI, the `gh` CLI, or the REST API — the same call an
+# agent (e.g. Genie) makes:
+#   POST /repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches
+#   { "ref": "main", "inputs": { "deployment_name": "example", "action": "apply" } }
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_name:
+        description: "Deployment name — must match a file deployments/<name>.tfvars. Also used as the state key."
+        required: true
+        type: string
+      action:
+        description: "plan (preview only) or apply (create/update)."
+        required: true
+        type: choice
+        options: [plan, apply]
+        default: plan
+
+# OIDC: id-token lets the runner request a federated token; no stored secret.
+permissions:
+  id-token: write
+  contents: read
+
+# One run at a time per deployment, so two applies never race the same state.
+concurrency:
+  group: tf-${{ inputs.deployment_name }}
+  cancel-in-progress: false
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    # Protected environment: put required reviewers on `azure-prod` so an apply
+    # pauses for human approval. This is also what the OIDC federated credential
+    # is bound to, so a fork/PR cannot assume the identity.
+    environment: azure-prod
+    defaults:
+      run:
+        working-directory: tf
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify deployment file exists
+        run: test -f "../deployments/${{ inputs.deployment_name }}.tfvars"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_SA }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=${{ inputs.deployment_name }}.tfstate"
+
+      - name: Terraform Plan
+        run: |
+          terraform plan -input=false \
+            -var-file="../deployments/${{ inputs.deployment_name }}.tfvars" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: ${{ inputs.action == 'apply' }}
+        run: terraform apply -input=false tfplan
+
+      - name: Outputs
+        if: ${{ inputs.action == 'apply' }}
+        run: terraform output

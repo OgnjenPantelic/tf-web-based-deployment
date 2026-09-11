@@ -1,0 +1,64 @@
+name: Destroy Databricks Workspace
+
+# Separately gated teardown. Requires typing the deployment name twice so a
+# dispatch can't accidentally destroy the wrong workspace.
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_name:
+        description: "Deployment name to destroy (matches deployments/<name>.tfvars and its state key)."
+        required: true
+        type: string
+      confirm:
+        description: "Re-type the deployment name to confirm destruction."
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tf-${{ inputs.deployment_name }}
+  cancel-in-progress: false
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    # A distinct environment lets you require different (or more) approvers for teardown.
+    environment: azure-prod-destroy
+    defaults:
+      run:
+        working-directory: tf
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm name matches
+        run: |
+          if [ "${{ inputs.deployment_name }}" != "${{ inputs.confirm }}" ]; then
+            echo "confirm does not match deployment_name — aborting." >&2
+            exit 1
+          fi
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_SA }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=${{ inputs.deployment_name }}.tfstate"
+
+      - name: Terraform Destroy
+        run: |
+          terraform destroy -input=false -auto-approve \
+            -var-file="../deployments/${{ inputs.deployment_name }}.tfvars"

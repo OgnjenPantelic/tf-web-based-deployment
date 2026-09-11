@@ -1,0 +1,14 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfplan
+tfplan
+.terraform.lock.hcl
+
+# Local var files (real deployments live in deployments/, committed on purpose)
+tf/terraform.tfvars
+
+# OS
+.DS_Store
