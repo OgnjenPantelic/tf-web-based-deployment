@@ -5,11 +5,13 @@ workspace_name      = "ogp-web-ws"
 resource_group_name = "ogp-web-ws-rg"
 location            = "westeurope"
 
-tenant_id             = "bf465dc7-3bc8-4944-b018-092572b5c20d"
-databricks_account_id = "" # not needed for a workspace-only deploy
+# tenant_id / databricks_account_id are only needed when attaching a Unity Catalog
+# metastore; left blank for this workspace-only deploy.
+tenant_id             = ""
+databricks_account_id = ""
 
 existing_metastore_id = ""
 
 tags = {
-  owner = "ognjen.pantelic@databricks.com"
+  owner = "OgnjenPantelic"
 }
