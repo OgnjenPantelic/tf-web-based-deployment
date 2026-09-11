@@ -53,8 +53,11 @@ az storage account blob-service-properties update \
 echo "✓ storage account: $STATE_STORAGE_ACCOUNT"
 
 # 3. State container ----------------------------------------------------------
+# Use key auth: the running identity has management-plane Contributor but not
+# necessarily blob data-plane rights, and key auth works for either a user or SP.
+ACCOUNT_KEY="$(az storage account keys list -n "$STATE_STORAGE_ACCOUNT" -g "$STATE_RG" --query "[0].value" -o tsv)"
 az storage container create -n "$STATE_CONTAINER" \
-  --account-name "$STATE_STORAGE_ACCOUNT" --auth-mode login -o none
+  --account-name "$STATE_STORAGE_ACCOUNT" --auth-mode key --account-key "$ACCOUNT_KEY" -o none
 echo "✓ container: $STATE_CONTAINER"
 
 # 4. AD application + service principal (idempotent by display name) -----------
