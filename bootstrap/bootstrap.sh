@@ -81,8 +81,24 @@ fi
 echo "✓ service principal object id: $SP_OBJECT_ID"
 
 # 5. Federated credentials, one per GitHub environment ------------------------
+# GitHub OIDC subjects on this account embed numeric IDs (owner@<id>/repo@<id>),
+# which survive renames. Derive them via gh when available; override with
+# GITHUB_OWNER_ID / GITHUB_REPO_ID. Falls back to plain owner/repo if unknown.
+OWNER_ID="${GITHUB_OWNER_ID:-}"
+REPO_ID="${GITHUB_REPO_ID:-}"
+if command -v gh >/dev/null 2>&1; then
+  [ -z "$OWNER_ID" ] && OWNER_ID="$(gh api "users/${GITHUB_OWNER}" --jq .id 2>/dev/null || true)"
+  [ -z "$REPO_ID" ] && REPO_ID="$(gh api "repos/${GITHUB_OWNER}/${GITHUB_REPO}" --jq .id 2>/dev/null || true)"
+fi
+if [ -n "$OWNER_ID" ] && [ -n "$REPO_ID" ]; then
+  REPO_CLAIM="${GITHUB_OWNER}@${OWNER_ID}/${GITHUB_REPO}@${REPO_ID}"
+else
+  REPO_CLAIM="${GITHUB_OWNER}/${GITHUB_REPO}"
+fi
+echo "Using OIDC repo claim: ${REPO_CLAIM}"
+
 for ENVN in "${ENVS[@]}"; do
-  SUBJECT="repo:${GITHUB_OWNER}/${GITHUB_REPO}:environment:${ENVN}"
+  SUBJECT="repo:${REPO_CLAIM}:environment:${ENVN}"
   EXISTING="$(az ad app federated-credential list --id "$APP_ID" \
     --query "[?subject=='${SUBJECT}'] | [0].name" -o tsv 2>/dev/null || true)"
   if [ -z "$EXISTING" ]; then
