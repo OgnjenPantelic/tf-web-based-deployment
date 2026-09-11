@@ -1,46 +1,74 @@
-# Bootstrap (run once)
+# Bootstrap (one-time, web-based)
 
-Creates the pieces the CI pipeline needs before it can run:
+Everything in this project runs in GitHub Actions — including this one-time setup.
+Bootstrap creates the pieces the deploy/destroy workflows depend on:
 
 - Terraform **remote state** storage account + container
-- A GitHub-**OIDC** Azure AD application / service principal (no stored secret)
-- A **federated credential** trusting this repo's `azure-prod` environment
+- A GitHub-**OIDC** Azure AD application / service principal (no long-lived secret)
+- A **federated credential** per GitHub environment (`azure-prod`, `azure-prod-destroy`)
 - Role assignments: **Contributor** on the subscription + **Storage Blob Data Contributor** on the state account
 
-## Prerequisites
+## Why a temporary secret
 
-- Azure CLI logged in as someone who can create app registrations and assign roles
-  (Owner or User Access Administrator on the subscription): `az login`
-- Terraform installed locally
+Bootstrap is the one step that *cannot* use OIDC, because it is what creates the OIDC
+identity. To break that chicken-and-egg, the bootstrap workflow authenticates once
+with a **temporary, privileged service principal secret**, which you delete afterward.
+Every other workflow uses OIDC with no stored secret.
 
-## Run
+## Steps
 
-```bash
-cd bootstrap
-terraform init
-terraform apply \
-  -var 'subscription_id=<SUB_ID>' \
-  -var 'github_owner=OgnjenPantelic' \
-  -var 'github_repo=tf-web-based-deployment' \
-  -var 'state_storage_account_name=<globally-unique-name>'
+### 1. Create the temporary service principal (web)
+
+In the [Azure Portal](https://portal.azure.com) (or one `az` command from any machine):
+
+- App registration → new registration → note the **Application (client) ID** and **Directory (tenant) ID**.
+- Certificates & secrets → new client secret → copy the **value**.
+- Grant it **Owner** on the target subscription (Access control (IAM) → Add role assignment).
+- Grant it the **Application Administrator** directory role (Microsoft Entra ID → Roles and administrators),
+  so it can create the app registration and federated credentials.
+
+> This principal is powerful and short-lived — delete its secret (and optionally the SP)
+> after bootstrap succeeds.
+
+### 2. Store the credential as a GitHub secret
+
+Repo → Settings → Secrets and variables → Actions → **Secrets** → new secret
+`AZURE_BOOTSTRAP_CREDENTIALS` with this JSON:
+
+```json
+{
+  "clientId": "<app client id>",
+  "clientSecret": "<secret value>",
+  "subscriptionId": "<subscription id>",
+  "tenantId": "<tenant id>"
+}
 ```
 
-## After apply
+### 3. Run the bootstrap workflow
 
-1. Copy the outputs into **GitHub → repo → Settings → Secrets and variables → Actions → Variables**
-   (these are *variables*, not secrets — client/tenant/subscription IDs are not sensitive under OIDC):
+Actions → **Bootstrap (one-time)** → Run workflow → provide a globally-unique
+`state_storage_account` name (3-24 lowercase alphanumeric). The run's summary prints
+the six values you need next.
 
-   `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`,
-   `TFSTATE_RG`, `TFSTATE_SA`, `TFSTATE_CONTAINER`
+### 4. Set the deploy variables
 
-2. Create the GitHub **Environments** `azure-prod` and `azure-prod-destroy`
-   (repo → Settings → Environments) and add **required reviewers** so applies/destroys
-   pause for human approval.
+Repo → Settings → Secrets and variables → Actions → **Variables** (not secrets — these
+IDs are not sensitive under OIDC):
 
-3. **Manual step — Databricks account admin.** Add the service principal
-   (object id in the `service_principal_object_id` output) to your Databricks account
-   and grant it **account admin**, so it can attach metastores / manage workspaces.
-   Account console → User management → Service principals.
+`ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`,
+`TFSTATE_RG`, `TFSTATE_SA`, `TFSTATE_CONTAINER`
 
-> Keep `bootstrap/terraform.tfstate` out of the deploy pipeline. It references the
-> identity, not secrets, but treat it as sensitive infrastructure state.
+### 5. Create protected environments
+
+Repo → Settings → Environments → create `azure-prod` and `azure-prod-destroy`, each with
+**required reviewers**, so applies/destroys pause for human approval.
+
+### 6. Clean up
+
+Delete the `AZURE_BOOTSTRAP_CREDENTIALS` secret (and the temporary SP's client secret).
+
+## Notes
+
+- The script is idempotent — safe to re-run if a step failed.
+- **Databricks account admin** is only needed once you start attaching Unity Catalog
+  metastores. The SP object id is printed at the end of the bootstrap run for that grant.

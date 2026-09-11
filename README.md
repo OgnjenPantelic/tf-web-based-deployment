@@ -23,16 +23,23 @@ it the same way.
   name and the Terraform **state key**, so deployments are isolated from each other.
 - **`.github/workflows/`** — `deploy.yml` (plan/apply) and `destroy.yml`, both
   `workflow_dispatch` with inputs.
-- **`bootstrap/`** — one-time setup: remote state storage + the GitHub-OIDC identity.
+- **`bootstrap/`** — one-time setup, run as its own GitHub Actions workflow
+  (`bootstrap.yml`): remote state storage + the GitHub-OIDC identity.
   See [bootstrap/README.md](bootstrap/README.md).
 
-## Setup (once)
+## Setup (once, web-based)
 
-1. Run the [bootstrap](bootstrap/README.md) module.
-2. Set the GitHub Actions **variables** it outputs (`ARM_CLIENT_ID`, `ARM_TENANT_ID`,
+Bootstrap runs in Actions too — it's the only workflow that uses a temporary secret,
+because it's what creates the OIDC identity. Full steps in [bootstrap/README.md](bootstrap/README.md):
+
+1. Create a temporary privileged service principal, store it as the GitHub secret
+   `AZURE_BOOTSTRAP_CREDENTIALS`.
+2. Run the **Bootstrap (one-time)** workflow (provide a unique state storage account name).
+3. Set the six GitHub Actions **variables** it prints (`ARM_CLIENT_ID`, `ARM_TENANT_ID`,
    `ARM_SUBSCRIPTION_ID`, `TFSTATE_RG`, `TFSTATE_SA`, `TFSTATE_CONTAINER`).
-3. Create protected Environments `azure-prod` / `azure-prod-destroy` with required reviewers.
-4. Grant the CI service principal **Databricks account admin**.
+4. Create protected Environments `azure-prod` / `azure-prod-destroy` with required reviewers.
+5. Delete the temporary bootstrap secret. (Databricks account admin is only needed once
+   you attach Unity Catalog metastores.)
 
 ## Deploy a workspace
 
